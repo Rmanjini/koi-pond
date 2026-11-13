@@ -1,0 +1,52 @@
+# Copy into your profile repository as .github/workflows/feed.yml. A visitor opens an
+# issue titled "feed"; this draws the koi eating, counts the feeding in the README
+# between <!-- fed --> and <!-- /fed -->, thanks the visitor, and closes the issue.
+name: Feed the koi
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: write
+  issues: write
+
+# Shares the nightly pond's queue, so two runs never push at once.
+concurrency: koi-pond
+
+jobs:
+  feed:
+    if: startsWith(github.event.issue.title, 'feed')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the latest git-koi
+        id: koi
+        run:
+          echo "sha=$(git ls-remote https://github.com/Rmanjini/koi-pond HEAD | cut -f1)"
+          >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        id: cache
+        with:
+          path: ~/.cargo/bin/git-koi
+          key: git-koi-${{ steps.koi.outputs.sha }}
+      - name: Build git-koi
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cargo install --locked --git https://github.com/Rmanjini/koi-pond git-koi
+      - name: Feed the koi
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEEDER: ${{ github.event.issue.user.login }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          git-koi pond "$GITHUB_REPOSITORY_OWNER" --output-dir koi --body white --feeding
+          fed_count=$(( $(cat koi/fed-count 2>/dev/null || echo 0) + 1 ))
+          echo "$fed_count" > koi/fed-count
+          sed -i "s|<!-- fed -->.*<!-- /fed -->|<!-- fed -->Fed $fed_count times · last by @$FEEDER<!-- /fed -->|" README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add koi/pond.gif koi/fed-count README.md
+          git commit --quiet --message "koi: fed by @$FEEDER"
+          git pull --quiet --rebase
+          git push --quiet
+          gh issue close "$ISSUE_NUMBER" --comment "Thanks @$FEEDER! 🍚 The koi are eating — go have a look: https://github.com/$GITHUB_REPOSITORY_OWNER"

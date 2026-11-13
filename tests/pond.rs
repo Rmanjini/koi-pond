@@ -1,3 +1,4 @@
+use git_koi::behavior::Behavior;
 use git_koi::coat::KoiBody;
 use git_koi::collect::{CollectionError, GraphqlClient};
 use git_koi::history::LanguageColor;
@@ -54,7 +55,7 @@ fn pond_gif_loops_one_cruise_at_the_pond_size() {
             commit_count: 1,
         },
     ];
-    let gif_bytes = render_pond_gif(&pond, KoiBody::White).unwrap();
+    let gif_bytes = render_pond_gif(&pond, KoiBody::White, Behavior::Cruise).unwrap();
     let mut decoder = gif::DecodeOptions::new()
         .read_info(gif_bytes.as_slice())
         .unwrap();
@@ -66,8 +67,26 @@ fn pond_gif_loops_one_cruise_at_the_pond_size() {
     }
     assert_eq!(frame_count, 120);
     assert_eq!(
-        render_pond_gif(&pond, KoiBody::White).unwrap(),
+        render_pond_gif(&pond, KoiBody::White, Behavior::Cruise).unwrap(),
         gif_bytes,
         "deterministic"
     );
+}
+
+#[test]
+fn feeding_pond_loops_the_feeding_behavior() {
+    let pond = [PondKoi {
+        repository_id: 5,
+        language: None,
+        commit_count: 3,
+    }];
+    let gif_bytes = render_pond_gif(&pond, KoiBody::White, Behavior::SurfaceFeeding).unwrap();
+    let mut decoder = gif::DecodeOptions::new()
+        .read_info(gif_bytes.as_slice())
+        .unwrap();
+    let mut frame_count = 0;
+    while decoder.read_next_frame().unwrap().is_some() {
+        frame_count += 1;
+    }
+    assert_eq!(frame_count, 90);
 }

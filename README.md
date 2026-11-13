@@ -18,7 +18,8 @@ cargo install --locked --git https://github.com/Rmanjini/koi-pond git-koi
 git-koi pond LOGIN --output-dir koi --body white
 ```
 
-This writes `koi/pond.gif`. The body is one of `white`, `black`, `asagi`, `tea`, `gold`,
+This writes `koi/pond.gif`. Add `--feeding` to draw the koi surfacing to eat instead of
+cruising. The body is one of `white`, `black`, `asagi`, `tea`, `gold`,
 or `platinum`.
 
 - One koi per public, non-fork repository the account owns, up to the busiest 12.
@@ -34,6 +35,18 @@ Actions tab, and add this to its `README.md`:
 ```html
 <img src="koi/pond.gif" width="100%" alt="My koi pond" />
 ```
+
+### Let visitors feed the koi
+
+Copy [examples/feed-workflow.yml](examples/feed-workflow.yml) into the profile
+repository as `.github/workflows/feed.yml` and add a link that opens a `feed` issue:
+
+```markdown
+[🍚 Feed the koi](https://github.com/LOGIN/LOGIN/issues/new?title=feed&body=Click+Create+to+drop+food+in+the+pond)
+```
+
+Each feed issue redraws the pond with the koi eating, counts the feeding, thanks the
+visitor, and closes the issue. The nightly run sets them cruising again.
 
 ## License
 
