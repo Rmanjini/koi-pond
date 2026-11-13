@@ -106,6 +106,7 @@ pub fn collect_pond(
     Ok(pond)
 }
 
+const POND_BEHAVIOR: Behavior = Behavior::Cruise;
 /// Distance between neighboring koi's lap centers; laps overlap a little, like a real pond.
 const CELL_PIXELS: u32 = 160;
 const MARGIN_PIXELS: u32 = 32;
@@ -133,15 +134,11 @@ const LILY_PADS: [([f64; 2], f64, bool); 5] = [
     ([0.55, 0.06], 10.0, false),
 ];
 
-/// Render the pond as a looping, opaque-inside GIF at native size. The koi swim the
-/// behavior's loop, as the single koi does (cruising laps, or surface feeding in place), each starting at its own point in the loop, and
+/// Render the pond as a looping, opaque-inside GIF at native size. The koi cruise the
+/// same loop as the single koi, each starting at its own point in the loop, and
 /// neighbors circle in opposite directions. Bigger koi swim beneath smaller ones, and the
 /// lily pads float above them all. Identical inputs produce identical bytes.
-pub fn render_pond_gif(
-    pond: &[PondKoi],
-    koi_body: KoiBody,
-    behavior: Behavior,
-) -> Result<Vec<u8>, String> {
+pub fn render_pond_gif(pond: &[PondKoi], koi_body: KoiBody) -> Result<Vec<u8>, String> {
     let koi_count = pond.len().max(1) as u32;
     // Roughly three columns for every two rows.
     let column_count = ((f64::from(koi_count) * 1.5).sqrt().ceil() as u32).clamp(1, koi_count);
@@ -158,7 +155,7 @@ pub fn render_pond_gif(
     let mut slot_order: Vec<usize> = (0..pond.len()).collect();
     slot_order.sort_by_key(|&koi_index| mix(pond[koi_index].repository_id));
     // Draw order is busiest first, so the biggest koi swim beneath the smaller ones.
-    let placed_koi: Vec<(KoiDevelopment, [i64; 2], bool, u32, u32)> = pond
+    let placed_koi: Vec<(KoiDevelopment, [i64; 2], bool, u32)> = pond
         .iter()
         .enumerate()
         .map(|(koi_index, pond_koi)| {
@@ -174,16 +171,13 @@ pub fn render_pond_gif(
                 (MARGIN_PIXELS + row_offset + column * CELL_PIXELS + CELL_PIXELS / 2) as i64,
                 (MARGIN_PIXELS + row * CELL_PIXELS + CELL_PIXELS / 2) as i64,
             ];
-            // Neighbors circle in opposite directions; each koi faces its own quarter turn.
             let is_mirrored = (column + row) % 2 == 1;
-            let quarter_turns = ((mix(pond_koi.repository_id) >> 32) % 4) as u32;
             let start_frame =
-                (mix(pond_koi.repository_id) % u64::from(frame_count(behavior))) as u32;
+                (mix(pond_koi.repository_id) % u64::from(frame_count(POND_BEHAVIOR))) as u32;
             (
                 develop_koi(pond_koi, busiest),
                 center,
                 is_mirrored,
-                quarter_turns,
                 start_frame,
             )
         })
@@ -196,13 +190,13 @@ pub fn render_pond_gif(
         .set_repeat(gif::Repeat::Infinite)
         .map_err(|error| error.to_string())?;
     let mut previous_pixels: Option<Vec<[u8; 4]>> = None;
-    for frame_index in 0..frame_count(behavior) {
+    for frame_index in 0..frame_count(POND_BEHAVIOR) {
         let mut pixels = background.clone();
-        for (koi_development, center, is_mirrored, quarter_turns, start_frame) in &placed_koi {
+        for (koi_development, center, is_mirrored, start_frame) in &placed_koi {
             let koi_frame = render_swim_frame(
                 koi_development,
                 koi_body,
-                behavior,
+                POND_BEHAVIOR,
                 frame_index + start_frame,
             );
             let koi_pixels = koi_frame.as_rgba_bytes().as_chunks::<4>().0;
@@ -212,12 +206,14 @@ pub fn render_pond_gif(
                     if koi_pixel[3] == 0 {
                         continue;
                     }
-                    let [turned_x, turned_y] =
-                        turn_tile_pixel(tile_x, tile_y, *is_mirrored, *quarter_turns);
+                    let source_x = if *is_mirrored {
+                        FRAME_WIDTH_PIXELS - 1 - tile_x
+                    } else {
+                        tile_x
+                    };
                     let pond_x =
-                        center[0] - i64::from(FRAME_WIDTH_PIXELS / 2) + i64::from(turned_x);
-                    let pond_y =
-                        center[1] - i64::from(FRAME_HEIGHT_PIXELS / 2) + i64::from(turned_y);
+                        center[0] - i64::from(FRAME_WIDTH_PIXELS / 2) + i64::from(source_x);
+                    let pond_y = center[1] - i64::from(FRAME_HEIGHT_PIXELS / 2) + i64::from(tile_y);
                     if (0..i64::from(width)).contains(&pond_x)
                         && (0..i64::from(height)).contains(&pond_y)
                     {
@@ -273,19 +269,6 @@ pub fn render_pond_gif(
         previous_pixels = Some(pixels);
     }
     gif_encoder.into_inner().map_err(|error| error.to_string())
-}
-
-/// Where a pixel of the square koi tile lands after an optional mirror and some quarter
-/// turns clockwise. Both are exact on pixels, so the art stays crisp.
-fn turn_tile_pixel(tile_x: u32, tile_y: u32, is_mirrored: bool, quarter_turns: u32) -> [u32; 2] {
-    let last = FRAME_WIDTH_PIXELS - 1;
-    let x = if is_mirrored { last - tile_x } else { tile_x };
-    match quarter_turns % 4 {
-        0 => [x, tile_y],
-        1 => [last - tile_y, x],
-        2 => [last - x, last - tile_y],
-        _ => [tile_y, last - x],
-    }
 }
 
 /// The repository as a koi: its language on the body, its commits, scaled so the busiest

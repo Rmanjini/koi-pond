@@ -18,7 +18,7 @@ use git_koi::render::{KoiFrame, render_koi, render_swim_frame};
 
 const USAGE: &str = "Usage: git-koi collect LOGIN [--output FILE]
        git-koi render SNAPSHOT --output-dir DIR [--body BODY]
-       git-koi pond LOGIN --output-dir DIR [--body BODY] [--feeding]
+       git-koi pond LOGIN --output-dir DIR [--body BODY]
        git-koi --help | --version
 Collect LOGIN's public GitHub snapshot as JSON through `gh api`: public owned and
 contributed repositories, and daily contributions from the account's creation
@@ -30,8 +30,7 @@ observation date, koi.png is the still koi, and preview.html shows both on light
 dark backgrounds. BODY is white (the default), black, asagi, tea, gold, or platinum.
 The files are replaced only after all of them render.
 Draw LOGIN's pond into DIR as pond.gif: one koi per public, non-fork repository it owns
-(the busiest 12), each sized by its default branch's commits, among lily pads. With
---feeding the koi surface and eat instead of cruising.
+(the busiest 12), each sized by its default branch's commits, among lily pads.
 Errors go to stderr and exit 1; invalid usage exits 2.
 Examples: git-koi collect octocat --output snapshot.json
           git-koi render snapshot.json --output-dir koi --body asagi";
@@ -65,17 +64,21 @@ fn main() -> ExitCode {
         [Some("collect"), Some(login), Some("--output"), _] if !login.starts_with('-') => {
             run_collect(login, Some(Path::new(&program_arguments[3])))
         }
+        [Some("pond"), Some(login), Some("--output-dir"), _] if !login.starts_with('-') => {
+            run_pond(login, Path::new(&program_arguments[3]), KoiBody::default())
+        }
         [
             Some("pond"),
             Some(login),
             Some("--output-dir"),
             _,
-            pond_options @ ..,
-        ] if !login.starts_with('-') && parse_pond_options(pond_options).is_some() => {
-            let (koi_body, behavior) =
-                parse_pond_options(pond_options).expect("the guard parsed the options");
-            run_pond(login, Path::new(&program_arguments[3]), koi_body, behavior)
-        }
+            Some("--body"),
+            Some(body_name),
+        ] if !login.starts_with('-') && parse_body(body_name).is_some() => run_pond(
+            login,
+            Path::new(&program_arguments[3]),
+            parse_body(body_name).expect("the guard parsed the body"),
+        ),
         [Some("render"), Some(snapshot_path), Some("--output-dir"), _]
             if !snapshot_path.starts_with('-') =>
         {
@@ -147,29 +150,10 @@ fn run_render(snapshot_path: &Path, output_directory: &Path, koi_body: KoiBody) 
     }
 }
 
-/// `[--body BODY] [--feeding]`, in that order; feeding koi surface for pellets instead of
-/// cruising.
-fn parse_pond_options(pond_options: &[Option<&str>]) -> Option<(KoiBody, Behavior)> {
-    let (koi_body, rest) = match pond_options {
-        [Some("--body"), Some(body_name), rest @ ..] => (parse_body(body_name)?, rest),
-        rest => (KoiBody::default(), rest),
-    };
-    match rest {
-        [] => Some((koi_body, Behavior::Cruise)),
-        [Some("--feeding")] => Some((koi_body, Behavior::SurfaceFeeding)),
-        _ => None,
-    }
-}
-
-fn run_pond(
-    login: &str,
-    output_directory: &Path,
-    koi_body: KoiBody,
-    behavior: Behavior,
-) -> ExitCode {
+fn run_pond(login: &str, output_directory: &Path, koi_body: KoiBody) -> ExitCode {
     let pond_result = collect_pond(&GhCli, login)
         .map_err(|collection_error| collection_error.to_string())
-        .and_then(|pond| Ok((pond.len(), render_pond_gif(&pond, koi_body, behavior)?)))
+        .and_then(|pond| Ok((pond.len(), render_pond_gif(&pond, koi_body)?)))
         .and_then(|(koi_count, gif_bytes)| {
             fs::create_dir_all(output_directory).map_err(|create_error| {
                 format!("{}: {create_error}", output_directory.display())
