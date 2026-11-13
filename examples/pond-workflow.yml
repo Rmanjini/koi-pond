@@ -1,0 +1,33 @@
+# Copy into your profile repository (LOGIN/LOGIN) as .github/workflows/pond.yml, then embed
+# <img src="koi/pond.gif" width="100%" alt="My koi pond"> in its README.md.
+name: Koi pond
+
+on:
+  schedule:
+    - cron: "20 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: koi-pond
+
+jobs:
+  pond:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build git-koi
+        run: cargo install --locked --git https://github.com/Rmanjini/koi-pond git-koi
+      - name: Draw the pond
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: git-koi pond "${{ github.repository_owner }}" --output-dir koi --body white
+      - name: Commit the pond if it changed
+        run: |
+          git add koi/pond.gif
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --quiet --message "koi: refill the pond"
+          git push --quiet
